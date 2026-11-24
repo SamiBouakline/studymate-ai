@@ -1,110 +1,120 @@
 # StudyMate AI
 
-A full-stack AI study assistant built with **Next.js, TypeScript, Tailwind CSS, React Markdown, KaTeX, and the Groq API**. Designed as a polished, responsive portfolio project and deployable to Vercel.
+An AI study assistant for high school and university students. Pick a study mode, choose a subject and grade level, and get explanations, worked solutions, quizzes, flashcards, or summaries written for your level.
+
+**Live demo: [studymateai-psi.vercel.app](https://studymateai-psi.vercel.app/)**
+
+Built with Next.js, TypeScript, Tailwind CSS, and the Groq API.
+
+## Study modes
+
+| Mode | What it does |
+|---|---|
+| **Learn** | Explains a concept at your grade level, starting with the core idea and a worked example. |
+| **Solve** | Walks through a problem step by step and explains why each step is valid, rather than only giving the final answer. |
+| **Quiz** | Asks one question at a time, waits for your answer, then gives feedback and corrects misconceptions. |
+| **Flashcards** | Generates question-and-answer cards for active recall. |
+| **Summarize** | Turns pasted notes into a structured study guide with a short self-check. |
 
 ## Features
 
-- **AI Tutor** — clear, level-aware explanations and examples.
-- **Step-by-step problem solving** — supports guided reasoning rather than answer dumping.
-- **Interactive quiz mode** — one question at a time with feedback.
-- **Flashcard generation** — active-recall Q&A cards.
-- **Study summaries** — structured notes and self-check prompts.
-- **Subject and education-level context** — adapts explanations to the learner.
-- **Conversation history** — saved in browser local storage.
-- **Math and code rendering** — Markdown, GFM tables, fenced code, and LaTeX via KaTeX.
-- **Responsive interface** — desktop, tablet, and mobile layouts.
-- **Server-side AI requests** — API key stays on the server, never in client-side JavaScript.
+- Subject and grade-level selectors that change how the AI explains things.
+- Math rendered with KaTeX, plus Markdown tables and syntax-friendly code blocks.
+- Multiple study sessions with history, saved in your browser's local storage.
+- Responsive layout with a slide-out sidebar on small screens.
+- Retry on errors without duplicating your message.
 
 ## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 14, React 18, TypeScript |
-| Styling | Tailwind CSS + custom responsive CSS |
+| Framework | Next.js 14 (App Router), React 18, TypeScript |
+| Styling | Tailwind CSS and custom CSS |
 | AI | Groq API (`openai/gpt-oss-20b`) |
-| Rendering | React Markdown, remark-gfm, remark-math, rehype-katex |
-| Icons | Lucide React |
+| Rendering | react-markdown, remark-gfm, remark-math, rehype-katex |
+| Icons | lucide-react |
 | Hosting | Vercel |
 
-## Run locally
+## How it works
 
-### 1. Requirements
-- Node.js 18.17+ (Node 20 LTS recommended)
-- A Groq API key from [Groq Console](https://console.groq.com/)
+The browser never talks to the AI provider directly. The chat interface sends the conversation, subject, grade level, and mode to a Next.js API route (`app/api/chat/route.ts`). That route builds a system prompt for the selected mode, calls Groq with the API key read from a server-side environment variable, and returns the reply.
 
-### 2. Install dependencies
-```bash
-npm install
-```
+Some implementation details:
 
-### 3. Configure your API key
-Copy `.env.example` to `.env.local` and add your key:
-```env
-GROQ_API_KEY=your_actual_key
-```
-Do not commit `.env.local`. It is already excluded by `.gitignore`.
-
-### 4. Start the development server
-```bash
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000).
-
-### 5. Production build check
-```bash
-npm run build
-npm start
-```
-
-## Deploy publicly with Vercel
-
-1. Push this project to a GitHub repository.
-2. Sign in to [Vercel](https://vercel.com/) with GitHub.
-3. Select **Add New → Project**, then import your `studymate-ai` repository.
-4. Keep the detected framework as **Next.js**.
-5. In **Environment Variables**, add:
-   - Name: `GROQ_API_KEY`
-   - Value: your Groq API key
-   - Environments: Production, Preview, and Development (as appropriate)
-6. Select **Deploy**.
-7. After deployment, open the generated `*.vercel.app` URL and test a prompt.
-
-When you change environment variables, redeploy for the changes to take effect.
+- **API key stays on the server.** `GROQ_API_KEY` is only read in the API route and is never sent to the browser.
+- **Input validation.** The route accepts at most 30 messages per request and 8,000 characters per message, and returns readable error messages.
+- **Request timeout.** Calls to the AI provider time out after 45 seconds.
+- **Math formatting.** Language models often write equations as `\( ... \)` and `\[ ... \]`, which Markdown renderers mangle. The client converts these to `$...$` and `$$...$$` before rendering, and leaves code blocks untouched. The system prompt also asks the model to use dollar-sign delimiters.
+- **Mode-specific prompts.** Each study mode has its own instructions, for example the quiz mode must wait for an answer before revealing it.
 
 ## Project structure
 
 ```text
 studymate-ai/
 ├── app/
-│   ├── api/chat/route.ts     # Secure server-side Groq API endpoint
-│   ├── globals.css           # Responsive design system
-│   ├── layout.tsx            # App metadata and global styles
-│   └── page.tsx              # Main route
+│   ├── api/chat/route.ts      # Server-side Groq endpoint and mode prompts
+│   ├── globals.css            # Design tokens, layout, and Markdown styles
+│   ├── layout.tsx             # App metadata and global styles
+│   └── page.tsx               # Main route
 ├── components/
-│   └── StudyWorkspace.tsx   # Chat, modes, settings, and session UI
+│   └── StudyWorkspace.tsx     # Sessions, modes, chat UI, and math handling
 ├── .env.example
-├── .gitignore
 ├── package.json
 └── README.md
 ```
 
-## Engineering notes
+## Run it locally
 
-- The browser calls `/api/chat`; the Groq key is read only by the server route.
-- Conversation history is stored in the current browser's local storage. It is not synced between devices or accounts.
-- The API route validates message shape and size, limits conversation length, and returns user-friendly errors.
-- The model name is configured in `app/api/chat/route.ts`.
-- AI-generated content can be incorrect. Users should verify important academic information.
+You need Node.js 18.17 or newer and a free API key from the [Groq Console](https://console.groq.com/).
 
-## Potential next iterations
+```bash
+npm install
+```
 
-- User accounts and cloud-synced study history.
-- Upload and extract notes/PDFs.
-- Persistent flashcard decks with spaced repetition.
+Copy `.env.example` to `.env.local` and add your key:
+
+```env
+GROQ_API_KEY=your_key_here
+```
+
+Start the development server and open [http://localhost:3000](http://localhost:3000):
+
+```bash
+npm run dev
+```
+
+To check a production build:
+
+```bash
+npm run build
+npm start
+```
+
+## Deploy your own copy
+
+1. Fork or clone this repository to your GitHub account.
+2. In [Vercel](https://vercel.com/), choose **Add New → Project** and import the repository.
+3. Under **Environment Variables**, add `GROQ_API_KEY` with your own key.
+4. Deploy. After changing environment variables later, redeploy for them to take effect.
+
+Never commit a real API key. `.env.local` is excluded by `.gitignore`.
+
+## Known limitations
+
+- Chat history lives in your browser's local storage, so it is not synced across devices and clears if you clear site data.
+- Responses are not streamed. The full answer appears when the model finishes.
+- There is no per-user rate limiting, so heavy use of the public demo can exhaust the shared Groq quota.
+- Quizzes and flashcards are produced as chat text, not as interactive cards.
+- AI-generated answers can be wrong. Check important academic information against your course materials.
+
+## Ideas for next steps
+
+- Flip-style flashcard decks with spaced repetition.
 - Streaming responses.
-- Automated tests and usage analytics.
-- Per-user rate limits and abuse protection.
+- Uploading notes or PDFs to summarize.
+- User accounts with synced study history.
+- Rate limiting and automated tests.
 
 ## License
 
-MIT — see `LICENSE`.
+MIT. See `LICENSE`.
