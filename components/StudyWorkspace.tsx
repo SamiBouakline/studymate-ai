@@ -5,35 +5,70 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import {
-  Atom, BookOpen, BrainCircuit, Calculator, Check, ChevronDown, CircleHelp,
-  Clock3, Code2, Command, FileText, GraduationCap, History, Lightbulb,
-  Menu, MessageCircle, Plus, Send, Settings2, Sparkles, SquarePen, Trash2,
-  X, Zap
-} from "lucide-react";
+import { BookOpen, BrainCircuit, Calculator, CircleHelp, FileText, Menu, Plus, Send, Trash2, X } from "lucide-react";
 
 type Mode = "tutor" | "solve" | "quiz" | "flashcards" | "summarize";
 type Message = { role: "user" | "assistant"; content: string };
 type Session = { id: string; title: string; subject: string; mode: Mode; messages: Message[]; updatedAt: number };
 
-const modes: { id: Mode; label: string; description: string; icon: typeof BrainCircuit }[] = [
-  { id: "tutor", label: "AI Tutor", description: "Understand any concept", icon: BrainCircuit },
-  { id: "solve", label: "Solve a problem", description: "Work through it step by step", icon: Calculator },
-  { id: "quiz", label: "Quiz me", description: "Test your understanding", icon: CircleHelp },
-  { id: "flashcards", label: "Flashcards", description: "Remember what matters", icon: BookOpen },
-  { id: "summarize", label: "Summarize notes", description: "Turn notes into a study guide", icon: FileText }
+const modes: {
+  id: Mode; label: string; description: string; placeholder: string; examples: string[]; icon: typeof BrainCircuit;
+}[] = [
+  {
+    id: "tutor", label: "Learn", icon: BrainCircuit,
+    description: "Get a concept explained at your level",
+    placeholder: "Ask about any concept…",
+    examples: ["Explain Newton's second law with an example", "What is the difference between mitosis and meiosis?"]
+  },
+  {
+    id: "solve", label: "Solve", icon: Calculator,
+    description: "Work through a problem one step at a time",
+    placeholder: "Paste a problem to work through…",
+    examples: ["Help me solve 2x^2 - 5x - 3 = 0 step by step", "How do I find the derivative of x^2 * sin(x)?"]
+  },
+  {
+    id: "quiz", label: "Quiz", icon: CircleHelp,
+    description: "Answer questions one at a time and get feedback",
+    placeholder: "Name a topic to be quizzed on…",
+    examples: ["Quiz me on the causes of the French Revolution", "Test me on the basics of cell biology"]
+  },
+  {
+    id: "flashcards", label: "Flashcards", icon: BookOpen,
+    description: "Generate question-and-answer cards to review",
+    placeholder: "Name a topic or paste your notes…",
+    examples: ["Make flashcards for the main types of chemical bonds", "Make flashcards for key terms in supply and demand"]
+  },
+  {
+    id: "summarize", label: "Summarize", icon: FileText,
+    description: "Turn your notes into a structured study guide",
+    placeholder: "Paste your notes here…",
+    examples: ["Summarize the causes and effects of World War I", "Summarize how photosynthesis works"]
+  }
 ];
 
 const subjects = ["General", "Mathematics", "Physics", "Chemistry", "Biology", "Computer Science", "English", "History"];
-const suggestions = [
-  { icon: Atom, title: "Explain a tough concept", prompt: "Explain a difficult concept in this subject using a simple analogy and then a more rigorous explanation." },
-  { icon: Calculator, title: "Help me solve a problem", prompt: "I have a problem I want to solve. Help me understand the steps without giving away the final answer immediately." },
-  { icon: BrainCircuit, title: "Test my knowledge", prompt: "Quiz me on the most important concepts in this subject, one question at a time." },
-  { icon: Lightbulb, title: "Make it make sense", prompt: "What are the most commonly misunderstood ideas in this subject? Explain how to avoid those misconceptions." }
-];
+const levels = ["Grade 9", "Grade 10", "Grade 11", "Grade 12", "University", "Self-study"];
 
 function makeSession(): Session {
-  return { id: crypto.randomUUID(), title: "New study session", subject: "General", mode: "tutor", messages: [], updatedAt: Date.now() };
+  return { id: crypto.randomUUID(), title: "New session", subject: "General", mode: "tutor", messages: [], updatedAt: Date.now() };
+}
+
+/**
+ * Language models often write math as \( ... \) and \[ ... \]. The Markdown renderer
+ * only understands $...$ and $$...$$, and it also treats a backslash before ( or [ as an
+ * escape, which is what produced the stray brackets and commas. Convert before rendering,
+ * and leave fenced code blocks untouched.
+ */
+function normalizeMath(text: string): string {
+  return text
+    .split(/(```[\s\S]*?```)/g)
+    .map((part, i) => {
+      if (i % 2 === 1) return part;
+      return part
+        .replace(/\\\[([\s\S]+?)\\\]/g, (_, m: string) => "\n\n$$\n" + m.trim() + "\n$$\n\n")
+        .replace(/\\\(([\s\S]+?)\\\)/g, (_, m: string) => "$" + m.trim() + "$");
+    })
+    .join("");
 }
 
 export default function StudyWorkspace() {
@@ -46,7 +81,6 @@ export default function StudyWorkspace() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -78,6 +112,14 @@ export default function StudyWorkspace() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages, loading]);
 
+  // Grow the text box with its content, up to a maximum height.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 180) + "px";
+  }, [input]);
+
   function updateActive(patch: Partial<Session>) {
     setSessions(prev => prev.map(s => s.id === activeId ? { ...s, ...patch, updatedAt: Date.now() } : s));
   }
@@ -101,10 +143,11 @@ export default function StudyWorkspace() {
   function chooseMode(next: Mode) { setMode(next); updateActive({ mode: next }); }
   function chooseSubject(next: string) { setSubject(next); updateActive({ subject: next }); }
 
-  async function sendMessage(text = input) {
+  async function sendMessage(text = input, retry = false) {
     const content = text.trim();
     if (!content || loading || !active) return;
-    const nextMessages: Message[] = [...messages, { role: "user", content }];
+    // On retry the user's message is already in the conversation, so don't add it twice.
+    const nextMessages: Message[] = retry ? messages : [...messages, { role: "user", content }];
     setInput(""); setError(""); setLoading(true);
     const title = messages.length === 0 ? content.slice(0, 42) + (content.length > 42 ? "…" : "") : active.title;
     updateActive({ messages: nextMessages, title, subject, mode });
@@ -127,121 +170,117 @@ export default function StudyWorkspace() {
   }
 
   const currentMode = modes.find(m => m.id === mode) || modes[0];
-  const ModeIcon = currentMode.icon;
+  const hasMessages = messages.length > 0;
 
   return (
-    <main className="app-shell">
-      {sidebarOpen && <button className="mobile-scrim" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />}
-      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
-        <div className="brand-row">
-          <div className="brand-mark"><Sparkles size={19} /></div>
-          <span className="brand-name">study<span>mate</span></span>
-          <button className="icon-button sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar"><X size={18} /></button>
+    <div className="app">
+      {sidebarOpen && <button className="scrim" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />}
+
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <div className="sidebar-head">
+          <span className="brand">StudyMate</span>
+          <button className="icon-button close-sidebar" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar"><X size={18} /></button>
         </div>
-        <button className="new-chat-button" onClick={newSession}><Plus size={17} /> New study session <span className="shortcut">⌘ K</span></button>
-        <div className="side-section">
-          <div className="section-label">WORKSPACE</div>
-          <button className="nav-item active"><MessageCircle size={17} /> Study assistant</button>
-          <button className="nav-item" onClick={() => { chooseMode("flashcards"); setSidebarOpen(false); }}><BookOpen size={17} /> Flashcard maker</button>
-          <button className="nav-item" onClick={() => { chooseMode("quiz"); setSidebarOpen(false); }}><BrainCircuit size={17} /> Practice quiz</button>
+        <button className="new-session" onClick={newSession}><Plus size={16} /> New session</button>
+        <div className="history-label">Recent</div>
+        <div className="history">
+          {sessions.map(s => (
+            <div key={s.id} className={`history-item ${s.id === activeId ? "selected" : ""}`}>
+              <button className="history-open" onClick={() => openSession(s)} title={s.title}>{s.title}</button>
+              <button className="history-delete" onClick={() => removeSession(s.id)} aria-label={`Delete ${s.title}`}><Trash2 size={14} /></button>
+            </div>
+          ))}
         </div>
-        <div className="history-section">
-          <div className="history-heading"><span className="section-label">RECENT SESSIONS</span><History size={14} /></div>
-          <div className="history-list">
-            {sessions.map(s => (
-              <div key={s.id} className={`history-item ${s.id === activeId ? "selected" : ""}`}>
-                <button onClick={() => openSession(s)} title={s.title}><MessageCircle size={15} /><span>{s.title}</span></button>
-                <button className="delete-session" onClick={() => removeSession(s.id)} aria-label={`Delete ${s.title}`}><Trash2 size={13} /></button>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="sidebar-bottom">
-          <div className="plan-card"><div className="plan-icon"><Zap size={16} /></div><div><strong>Your learning space</strong><p>Built for curious minds.</p></div></div>
-          <button className="profile-row" onClick={() => setSettingsOpen(v => !v)}>
-            <div className="avatar">S</div><div className="profile-copy"><strong>Student</strong><span>Personal workspace</span></div><Settings2 size={17} />
-          </button>
-        </div>
+        <p className="sidebar-note">Sessions are saved in this browser only.</p>
       </aside>
 
-      <section className="main-panel">
+      <main className="main">
         <header className="topbar">
-          <div className="topbar-left">
-            <button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><Menu size={19} /></button>
-            <div className="breadcrumb"><span>Workspace</span><span className="crumb-slash">/</span><strong>Study assistant</strong></div>
-          </div>
-          <div className="topbar-right">
-            <div className="status-pill"><span className="status-dot" /> AI online</div>
-            <button className="level-select" onClick={() => setSettingsOpen(v => !v)}><GraduationCap size={16} /> {level} <ChevronDown size={14} /></button>
-          </div>
+          <button className="icon-button menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><Menu size={20} /></button>
+          <span className="topbar-title">{hasMessages ? active?.title : "New session"}</span>
         </header>
 
-        <div className="content-scroll">
-          <div className="workspace-content">
-            {messages.length === 0 ? (
-              <div className="welcome-screen">
-                <div className="welcome-eyebrow"><span className="eyebrow-spark"><Sparkles size={13} /></span> YOUR PERSONAL STUDY PARTNER</div>
-                <h1>Make learning<br /><span>click.</span></h1>
-                <p className="welcome-subtitle">Big questions, tricky concepts, late-night study sessions.<br className="desktop-break" /> Let&apos;s figure it out together.</p>
-                <div className="context-row">
-                  <label className="select-wrap"><BookOpen size={15} /><select value={subject} onChange={e => chooseSubject(e.target.value)} aria-label="Choose subject">{subjects.map(s => <option key={s}>{s}</option>)}</select><ChevronDown size={13} /></label>
-                  <span className="context-divider" />
-                  <span className="context-note"><Clock3 size={14} /> Learn at your own pace</span>
-                </div>
-                <div className="mode-grid">
+        <div className="scroll">
+          <div className="content">
+            {!hasMessages ? (
+              <section className="welcome">
+                <h1>What are you studying today?</h1>
+                <p className="lead">Choose how you want to work, then ask your question.</p>
+                <div className="mode-list" role="radiogroup" aria-label="Study mode">
                   {modes.map(m => {
                     const Icon = m.icon;
-                    return <button key={m.id} className={`mode-card ${mode === m.id ? "mode-selected" : ""}`} onClick={() => chooseMode(m.id)}>
-                      <span className="mode-icon"><Icon size={18} /></span><span className="mode-text"><strong>{m.label}</strong><small>{m.description}</small></span>{mode === m.id && <span className="mode-check"><Check size={13} /></span>}
-                    </button>;
+                    return (
+                      <button key={m.id} role="radio" aria-checked={mode === m.id} className={`mode-row ${mode === m.id ? "selected" : ""}`} onClick={() => chooseMode(m.id)}>
+                        <Icon size={18} />
+                        <span className="mode-name">{m.label}</span>
+                        <span className="mode-desc">{m.description}</span>
+                      </button>
+                    );
                   })}
                 </div>
-                <div className="suggestion-heading"><span>NOT SURE WHERE TO START?</span><div /></div>
-                <div className="suggestion-grid">
-                  {suggestions.map(s => {
-                    const Icon = s.icon;
-                    return <button key={s.title} className="suggestion-card" onClick={() => sendMessage(s.prompt)}><Icon size={16} /><span>{s.title}</span><span className="suggestion-arrow">↗</span></button>;
-                  })}
+                <div className="examples">
+                  <div className="examples-label">Examples</div>
+                  {currentMode.examples.map(e => (
+                    <button key={e} className="example" onClick={() => sendMessage(e)}>{e}</button>
+                  ))}
                 </div>
-              </div>
+              </section>
             ) : (
-              <div className="conversation">
-                <div className="conversation-heading"><div><span className="conversation-kicker">STUDY SESSION</span><h2>{active?.title || "Study session"}</h2></div><div className="conversation-meta"><span className="mini-dot" /> {subject}</div></div>
-                {messages.map((m, i) => (
-                  <article key={i} className={`message-row ${m.role}`}>
-                    <div className={`message-avatar ${m.role === "assistant" ? "ai-avatar" : "user-avatar"}`}>{m.role === "assistant" ? <Sparkles size={16} /> : "S"}</div>
-                    <div className="message-body"><div className="message-author">{m.role === "assistant" ? "StudyMate" : "You"} <span>{m.role === "assistant" ? "AI TUTOR" : "YOU"}</span></div>
-                      <div className="markdown-content"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{m.content}</ReactMarkdown></div>
+              <section className="conversation">
+                {messages.map((m, i) => m.role === "user" ? (
+                  <div key={i} className="msg msg-user"><div className="bubble">{m.content}</div></div>
+                ) : (
+                  <div key={i} className="msg msg-ai">
+                    <div className="markdown">
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeMath(m.content)}</ReactMarkdown>
                     </div>
-                  </article>
+                  </div>
                 ))}
-                {loading && <div className="message-row assistant"><div className="message-avatar ai-avatar"><Sparkles size={16} /></div><div className="message-body"><div className="message-author">StudyMate <span>THINKING</span></div><div className="typing"><i /><i /><i /><span>Working through this with you…</span></div></div></div>}
-                {error && <div className="error-banner"><CircleHelp size={16} /><span>{error}</span><button onClick={() => sendMessage(messages[messages.length - 1]?.content)}>Retry</button></div>}
+                {loading && <div className="thinking"><i /><i /><i /><span>Thinking</span></div>}
+                {error && (
+                  <div className="error">
+                    <span>{error}</span>
+                    <button onClick={() => sendMessage(messages[messages.length - 1]?.content, true)}>Try again</button>
+                  </div>
+                )}
                 <div ref={bottomRef} />
-              </div>
+              </section>
             )}
           </div>
         </div>
 
         <div className="composer-area">
-          <div className="composer-wrap">
-            <div className="composer-context"><span className="composer-mode"><ModeIcon size={13} /> {currentMode.label}</span><span className="composer-separator">·</span><span>{subject}</span><button onClick={() => setSettingsOpen(v => !v)}>Change <ChevronDown size={12} /></button></div>
-            <div className="composer">
-              <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Ask anything, or paste a problem to work through…" rows={1} aria-label="Message StudyMate" />
-              <button className="send-button" onClick={() => sendMessage()} disabled={!input.trim() || loading} aria-label="Send message">{loading ? <span className="send-spinner" /> : <Send size={17} />}</button>
+          <div className="composer-inner">
+            <div className="toolbar">
+              {hasMessages ? (
+                <div className="tabs" role="group" aria-label="Study mode">
+                  {modes.map(m => (
+                    <button key={m.id} className="tab" aria-pressed={mode === m.id} onClick={() => chooseMode(m.id)}>{m.label}</button>
+                  ))}
+                </div>
+              ) : <span />}
+              <div className="selects">
+                <select value={subject} onChange={e => chooseSubject(e.target.value)} aria-label="Subject">
+                  {subjects.map(s => <option key={s}>{s}</option>)}
+                </select>
+                <select value={level} onChange={e => setLevel(e.target.value)} aria-label="Education level">
+                  {levels.map(l => <option key={l}>{l}</option>)}
+                </select>
+              </div>
             </div>
-            <div className="composer-footer"><span><Command size={12} /> Enter to send <span className="footer-divider">·</span> Shift + Enter for new line</span><span>AI can make mistakes. Verify important information.</span></div>
+            <div className="composer">
+              <textarea
+                ref={textareaRef} value={input} rows={1} aria-label="Message"
+                placeholder={currentMode.placeholder}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              />
+              <button className="send" onClick={() => sendMessage()} disabled={!input.trim() || loading} aria-label="Send message"><Send size={16} /></button>
+            </div>
+            <p className="footnote">Press Enter to send, Shift+Enter for a new line. StudyMate can make mistakes, so check important details.</p>
           </div>
         </div>
-      </section>
-
-      {settingsOpen && <div className="settings-popover">
-        <div className="settings-title">Learning preferences <button onClick={() => setSettingsOpen(false)}><X size={15} /></button></div>
-        <label>Education level<select value={level} onChange={e => setLevel(e.target.value)}><option>Grade 9</option><option>Grade 10</option><option>Grade 11</option><option>Grade 12</option><option>University</option><option>Self-study</option></select></label>
-        <label>Subject<select value={subject} onChange={e => chooseSubject(e.target.value)}>{subjects.map(s => <option key={s}>{s}</option>)}</select></label>
-        <div className="settings-hint">These preferences guide how StudyMate explains concepts.</div>
-      </div>}
-      <div className="mobile-brand"><div className="brand-mark"><Sparkles size={15} /></div> studymate</div>
-    </main>
+      </main>
+    </div>
   );
 }
