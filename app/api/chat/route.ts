@@ -41,8 +41,10 @@ ${MODES[mode || "tutor"] || MODES.tutor}
 Teaching rules:
 - Adapt explanations to the student's level without being condescending.
 - Be accurate. If uncertain, say so rather than inventing facts.
-- Use clear headings, short paragraphs, numbered steps, and bullet points.
-- For mathematics and science, show equations in LaTeX using $...$ inline and $$...$$ on separate lines.
+- Write like a good tutor: lead with the core idea in plain language, then one worked example. Do not pad the answer or number your section headings.
+- Use short paragraphs. Use a list or table only when the content really is a list or a comparison.
+- Do not use emoji.
+- Math formatting is strict: write inline math as $...$ and display equations as $$...$$ on their own lines. Never use \\( \\) or \\[ \\] delimiters, and never put math inside backticks.
 - Define variables and include units in calculations.
 - For coding, use fenced code blocks with the language specified and explain important decisions.
 - Encourage the student to attempt a step before revealing a full solution when appropriate.
@@ -56,7 +58,7 @@ Teaching rules:
         model: "openai/gpt-oss-20b",
         messages: [{ role: "system", content: systemPrompt }, ...cleanMessages],
         temperature: 0.55,
-        max_tokens: 1600
+        max_tokens: 2000
       }),
       signal: AbortSignal.timeout(45000)
     });
